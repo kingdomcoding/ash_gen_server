@@ -5,6 +5,7 @@ defmodule AshGenServer.Supervisor do
   use DynamicSupervisor
   alias Ash.{Changeset, Resource}
   alias AshGenServer.Registry
+  alias Spark.Dsl.Extension
 
   @doc false
   @spec start_link(list) :: Supervisor.on_start()
@@ -19,9 +20,17 @@ defmodule AshGenServer.Supervisor do
   """
   @spec start_server(Resource.t(), Changeset.t()) :: DynamicSupervisor.on_start_child()
   def start_server(resource, changeset) do
+    child_spec =
+      case get_config(resource, :shutdown_timeout, nil) do
+        nil ->
+          {AshGenServer.Server, [resource, changeset]}
+        shutdown_timeout ->
+          Supervisor.child_spec({AshGenServer.Server, [resource, changeset]}, shutdown: shutdown_timeout)
+      end
+
     DynamicSupervisor.start_child(
       __MODULE__,
-      {AshGenServer.Server, [resource, changeset]}
+      child_spec
     )
   end
 
@@ -33,4 +42,7 @@ defmodule AshGenServer.Supervisor do
     with {:ok, pid} <- AshGenServer.Registry.find_server_by_resource_key(resource_key),
          do: DynamicSupervisor.terminate_child(__MODULE__, pid)
   end
+
+  defp get_config(resource, attr, default),
+    do: Extension.get_opt(resource, [:gen_server], attr, default)
 end

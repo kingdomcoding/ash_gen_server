@@ -41,6 +41,7 @@ defmodule AshGenServer.DataLayer do
         maximum_lifetime :timer.minutes(120)
         startup_callback fn state -> read_persisted_state(state.primary_key) end
         shutdown_callback fn _shutdown_reason, state -> persist_state_somewhere(state) end
+        shutdown_timeout 15_000
       end
       """
     ],
@@ -66,6 +67,11 @@ defmodule AshGenServer.DataLayer do
         type: {:fun, 2},
         doc:
           "A function to be called to perform cleanup when the genserver shuts down. Takes shutdown_reason and state (in order). Returns value is ignored."
+      ],
+      shutdown_timeout: [
+        type: :timeout,
+        doc:
+          "How long to wait (in milliseconds) before a resource is forcefully destroyed during a shutdown."
       ],
     ]
   }
