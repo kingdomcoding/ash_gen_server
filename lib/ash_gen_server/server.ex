@@ -5,7 +5,7 @@ defmodule AshGenServer.Server do
   This module is a `GenServer` which can create, read and update a single
   resource stored within it's state by applying changesets.
   """
-  defstruct ~w[primary_key resource record inactivity_timeout maximum_lifetime inactivity_timer lifetime_timer api]a
+  defstruct ~w[primary_key resource record inactivity_timeout maximum_lifetime startup_callback shutdown_callback inactivity_timer lifetime_timer api]a
   alias Ash.{Changeset, Resource}
   alias AshGenServer.Registry
   alias Spark.Dsl.Extension
@@ -18,6 +18,8 @@ defmodule AshGenServer.Server do
           record: Resource.record(),
           inactivity_timeout: pos_integer() | :infinity,
           maximum_lifetime: pos_integer() | :infinity,
+          startup_callback: function(),
+          shutdown_callback: function(),
           inactivity_timer: nil | reference,
           lifetime_timer: nil | reference
         }
@@ -44,6 +46,7 @@ defmodule AshGenServer.Server do
   @impl true
   @spec init(list) :: {:ok, t} | {:stop, {:error, any}}
   def init([resource, changeset]) do
+    Process.flag(:trap_exit, true)
     primary_key = primary_key_from_resource_and_changeset(resource, changeset)
 
     with {:ok, _self} <- Registry.register({resource, primary_key}),
@@ -52,6 +55,9 @@ defmodule AshGenServer.Server do
       inactivity_timeout = get_config(resource, :inactivity_timeout, :infinity)
       maximum_lifetime = get_config(resource, :maximum_lifetime, :infinity)
 
+      startup_callback = get_config(resource, :startup_callback, fn state -> state end)
+      shutdown_callback = get_config(resource, :shutdown_callback, fn _shutdown_reason, _state -> nil end)
+
       state =
         %__MODULE__{
           api: changeset.api,
@@ -59,16 +65,25 @@ defmodule AshGenServer.Server do
           resource: resource,
           record: record,
           inactivity_timeout: inactivity_timeout,
-          maximum_lifetime: maximum_lifetime
+          maximum_lifetime: maximum_lifetime,
+          startup_callback: startup_callback,
+          shutdown_callback: shutdown_callback,
         }
         |> maybe_set_inactivity_timer()
         |> maybe_set_lifetime_timer()
 
-      {:ok, state}
+      {:ok, state, {:continue, :startup_callback}}
     else
       {:error, {:already_registered, _}} -> {:stop, :already_exists}
       {:error, reason} -> {:stop, {:error, reason}}
     end
+  end
+
+  @doc false
+  @impl true
+  def handle_continue(:startup_callback, state) do
+    updated_state = state.startup_callback.(state)
+    {:noreply, updated_state}
   end
 
   @doc false
@@ -124,6 +139,13 @@ defmodule AshGenServer.Server do
 
   def handle_info(:keep_alive, state) do
     {:noreply, maybe_set_inactivity_timer(state)}
+  end
+
+  @doc false
+  @impl true
+  def terminate(reason, state) do
+    state.shutdown_callback.(reason, state)
+    {:noreply, state}
   end
 
   defp primary_key_from_resource_and_changeset(resource, changeset) do

@@ -39,6 +39,8 @@ defmodule AshGenServer.DataLayer do
       gen_server do
         inactivity_timeout :timer.minutes(5)
         maximum_lifetime :timer.minutes(120)
+        startup_callback fn state -> read_persisted_state(state.primary_key) end
+        shutdown_callback fn _shutdown_reason, state -> persist_state_somewhere(state) end
       end
       """
     ],
@@ -54,7 +56,17 @@ defmodule AshGenServer.DataLayer do
         default: :infinity,
         doc:
           "The maximum amount of time that the process can run (in milliseconds). Defaults to `:infinity`."
-      ]
+      ],
+      startup_callback: [
+        type: {:fun, 1},
+        doc:
+          "A function called to perform setup when the genserver starts. Takes state. Returns updated state."
+      ],
+      shutdown_callback: [
+        type: {:fun, 2},
+        doc:
+          "A function to be called to perform cleanup when the genserver shuts down. Takes shutdown_reason and state (in order). Returns value is ignored."
+      ],
     ]
   }
 
