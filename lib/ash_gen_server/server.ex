@@ -141,6 +141,10 @@ defmodule AshGenServer.Server do
     {:noreply, maybe_set_inactivity_timer(state)}
   end
 
+  def handle_info({:EXIT, _from_pid, reason}, state) do
+    terminate(reason, state)
+  end
+
   @doc false
   @impl true
   def terminate(reason, state) do
